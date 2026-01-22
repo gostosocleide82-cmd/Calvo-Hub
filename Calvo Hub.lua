@@ -1,5 +1,6 @@
---// Auto Full Moon Finder - Blox Fruits
+--// Moon Hub - Blox Fruits (Delta Safe)
 repeat task.wait() until game:IsLoaded()
+task.wait(3)
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
@@ -9,19 +10,24 @@ local player = Players.LocalPlayer
 
 -- ================= CONFIG =================
 getgenv().MoonHub = {
-    AutoHop = true,      -- trocar de servidor automaticamente
-    CheckDelay = 5       -- segundos entre checagens
+    AutoFind = false,
+    AutoHop = false,
+    Checking = false
 }
 
 -- ================= FUNÇÕES =================
 
-local function GetMoonStage()
-    -- Roblox nativo
-    return Lighting:GetMoonPhase()
+local function GetMoonPhaseName()
+    -- fallback seguro (funciona no Delta)
+    local phase = Lighting.MoonPhase
+    if typeof(phase) == "EnumItem" then
+        return phase.Name
+    end
+    return "Desconhecida"
 end
 
 local function IsFullMoon()
-    return GetMoonStage() == Enum.MoonPhase.Full
+    return GetMoonPhaseName() == "Full"
 end
 
 local function ServerHop()
@@ -35,76 +41,107 @@ local function ServerHop()
     for _,server in pairs(servers.data) do
         if server.playing < server.maxPlayers then
             TeleportService:TeleportToPlaceInstance(placeId, server.id, player)
-            task.wait(2)
+            break
         end
     end
 end
 
--- ================= UI SIMPLES =================
+-- ================= UI =================
 
 local CoreGui = game:GetService("CoreGui")
 local gui = Instance.new("ScreenGui", CoreGui)
 gui.Name = "MoonHubUI"
 gui.ResetOnSpawn = false
 
-local Frame = Instance.new("Frame", gui)
-Frame.Size = UDim2.new(0,300,0,140)
-Frame.Position = UDim2.new(0.5,-150,0.1,0)
-Frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
-Frame.Active = true
-Frame.Draggable = true
-Instance.new("UICorner", Frame)
+local Main = Instance.new("Frame", gui)
+Main.Size = UDim2.new(0,320,0,210)
+Main.Position = UDim2.new(0.5,-160,0.15,0)
+Main.BackgroundColor3 = Color3.fromRGB(20,20,20)
+Main.Active = true
+Main.Draggable = true
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0,14)
 
-local Title = Instance.new("TextLabel", Frame)
-Title.Size = UDim2.new(1,0,0,35)
+local Title = Instance.new("TextLabel", Main)
+Title.Size = UDim2.new(1,0,0,40)
 Title.BackgroundTransparency = 1
-Title.Text = "🌕 Moon Finder"
+Title.Text = "🌕 MOON HUB"
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 18
+Title.TextSize = 20
 Title.TextColor3 = Color3.fromRGB(0,170,255)
 
-local Status = Instance.new("TextLabel", Frame)
-Status.Position = UDim2.new(0,0,0,45)
+local MoonLabel = Instance.new("TextLabel", Main)
+MoonLabel.Position = UDim2.new(0,0,0,50)
+MoonLabel.Size = UDim2.new(1,0,0,30)
+MoonLabel.BackgroundTransparency = 1
+MoonLabel.Font = Enum.Font.Gotham
+MoonLabel.TextSize = 15
+MoonLabel.TextColor3 = Color3.new(1,1,1)
+MoonLabel.Text = "Lua: ..."
+
+local Status = Instance.new("TextLabel", Main)
+Status.Position = UDim2.new(0,0,0,80)
 Status.Size = UDim2.new(1,0,0,30)
 Status.BackgroundTransparency = 1
 Status.Font = Enum.Font.Gotham
 Status.TextSize = 14
-Status.TextColor3 = Color3.new(1,1,1)
-Status.Text = "Lua: ..."
+Status.TextColor3 = Color3.fromRGB(180,180,180)
+Status.Text = "Status: aguardando"
 
-local Info = Instance.new("TextLabel", Frame)
-Info.Position = UDim2.new(0,0,0,80)
-Info.Size = UDim2.new(1,0,0,40)
-Info.BackgroundTransparency = 1
-Info.Font = Enum.Font.Gotham
-Info.TextSize = 13
-Info.TextColor3 = Color3.fromRGB(180,180,180)
-Info.TextWrapped = true
-Info.Text = "Procurando Full Moon..."
+local function CreateToggle(text, y, callback)
+    local btn = Instance.new("TextButton", Main)
+    btn.Size = UDim2.new(0.9,0,0,36)
+    btn.Position = UDim2.new(0.05,0,0,y)
+    btn.Text = text.." : OFF"
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn)
+
+    local on = false
+    btn.MouseButton1Click:Connect(function()
+        on = not on
+        btn.Text = text.." : "..(on and "ON" or "OFF")
+        btn.BackgroundColor3 = on and Color3.fromRGB(0,140,255) or Color3.fromRGB(40,40,40)
+        callback(on)
+    end)
+end
+
+CreateToggle("🌕 Auto Find Full Moon", 115, function(v)
+    MoonHub.AutoFind = v
+end)
+
+CreateToggle("🔁 Auto Hop Full Moon", 160, function(v)
+    MoonHub.AutoHop = v
+end)
 
 -- ================= LOOP PRINCIPAL =================
 
 task.spawn(function()
-    while task.wait(MoonHub.CheckDelay) do
-        local stage = GetMoonStage()
-        Status.Text = "Lua: "..stage.Name
+    while task.wait(2) do
+        local phase = GetMoonPhaseName()
+        MoonLabel.Text = "Lua: "..phase
 
-        if IsFullMoon() then
-            Info.Text = "✅ FULL MOON ENCONTRADA!"
-            Info.TextColor3 = Color3.fromRGB(0,255,120)
-            MoonHub.AutoHop = false
-            break
-        else
-            Info.Text = "❌ Não é Full Moon"
-            Info.TextColor3 = Color3.fromRGB(255,100,100)
+        if MoonHub.AutoFind then
+            if IsFullMoon() then
+                Status.Text = "Status: ✅ FULL MOON!"
+                Status.TextColor3 = Color3.fromRGB(0,255,120)
+                MoonHub.AutoHop = false
+            else
+                Status.Text = "Status: ❌ não é Full Moon"
+                Status.TextColor3 = Color3.fromRGB(255,120,120)
 
-            if MoonHub.AutoHop then
-                task.wait(2)
-                ServerHop()
-                break
+                if MoonHub.AutoHop then
+                    task.wait(1)
+                    ServerHop()
+                end
             end
+        else
+            Status.Text = "Status: aguardando"
+            Status.TextColor3 = Color3.fromRGB(180,180,180)
         end
     end
 end)
 
-print("✅ Moon Finder carregado")
+print("✅ Moon Hub carregado com sucesso")
