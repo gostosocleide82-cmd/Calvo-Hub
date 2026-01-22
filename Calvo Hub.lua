@@ -1,6 +1,6 @@
---// Moon Hub - Real Working Version (Blox Fruits)
+--// Moon Hub - Fixed & Functional Version
 repeat task.wait() until game:IsLoaded()
-task.wait(3)
+task.wait(2)
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
@@ -10,32 +10,53 @@ local player = Players.LocalPlayer
 
 -- ================= CONFIG =================
 getgenv().MoonHub = {
-    AutoFind = false,
+    AutoFull = false,
+    Auto75 = false,
     AutoHop = false
 }
 
--- ================= FUNÇÕES =================
+-- ================= FUNÇÕES DE LUA =================
 
 local function IsNight()
     return Lighting.ClockTime >= 18 or Lighting.ClockTime <= 6
 end
 
--- Full Moon ocorre por volta de meia-noite (aprox)
-local function IsFullMoonWindow()
+local function GetMoonPhaseName()
+    local t = Lighting.ClockTime
+
+    if t >= 6 and t < 18 then
+        return "☀️ Day"
+    elseif t >= 18 and t < 23 then
+        return "🌘 Waxing Moon"
+    elseif t >= 23 and t < 23.5 then
+        return "🌗 75% Moon"
+    elseif t >= 23.5 or t <= 0.5 then
+        return "🌕 Full Moon"
+    elseif t > 0.5 and t <= 4 then
+        return "🌖 Waning Moon"
+    else
+        return "🌑 Night"
+    end
+end
+
+local function IsFullMoon()
     return Lighting.ClockTime >= 23.5 or Lighting.ClockTime <= 0.5
+end
+
+local function Is75Moon()
+    return Lighting.ClockTime >= 23 and Lighting.ClockTime < 23.5
 end
 
 local function ServerHop()
     local placeId = game.PlaceId
     local servers = HttpService:JSONDecode(
         game:HttpGet(
-            "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100"
-        )
+            "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?limit=100")
     )
 
-    for _,server in pairs(servers.data) do
-        if server.playing < server.maxPlayers then
-            TeleportService:TeleportToPlaceInstance(placeId, server.id, player)
+    for _, s in pairs(servers.data) do
+        if s.playing < s.maxPlayers then
+            TeleportService:TeleportToPlaceInstance(placeId, s.id, player)
             break
         end
     end
@@ -49,9 +70,9 @@ gui.Name = "MoonHubUI"
 gui.ResetOnSpawn = false
 
 local Main = Instance.new("Frame", gui)
-Main.Size = UDim2.new(0,320,0,220)
-Main.Position = UDim2.new(0.5,-160,0.15,0)
-Main.BackgroundColor3 = Color3.fromRGB(20,20,20)
+Main.Size = UDim2.new(0,330,0,260)
+Main.Position = UDim2.new(0.5,-165,0.15,0)
+Main.BackgroundColor3 = Color3.fromRGB(18,18,18)
 Main.Active = true
 Main.Draggable = true
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0,14)
@@ -59,24 +80,23 @@ Instance.new("UICorner", Main).CornerRadius = UDim.new(0,14)
 local Title = Instance.new("TextLabel", Main)
 Title.Size = UDim2.new(1,0,0,40)
 Title.BackgroundTransparency = 1
-Title.Text = "🌕 MOON HUB (REAL)"
+Title.Text = "🌙 MOON HUB"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 20
 Title.TextColor3 = Color3.fromRGB(0,170,255)
 
-local Info = Instance.new("TextLabel", Main)
-Info.Position = UDim2.new(0,0,0,50)
-Info.Size = UDim2.new(1,0,0,60)
-Info.BackgroundTransparency = 1
-Info.Font = Enum.Font.Gotham
-Info.TextSize = 14
-Info.TextColor3 = Color3.new(1,1,1)
-Info.TextWrapped = true
-Info.Text = "Carregando..."
+local Status = Instance.new("TextLabel", Main)
+Status.Position = UDim2.new(0,0,0,45)
+Status.Size = UDim2.new(1,0,0,80)
+Status.BackgroundTransparency = 1
+Status.Font = Enum.Font.Gotham
+Status.TextSize = 14
+Status.TextWrapped = true
+Status.TextColor3 = Color3.new(1,1,1)
 
 local function Toggle(text, y, callback)
     local b = Instance.new("TextButton", Main)
-    b.Size = UDim2.new(0.9,0,0,36)
+    b.Size = UDim2.new(0.9,0,0,34)
     b.Position = UDim2.new(0.05,0,0,y)
     b.Text = text.." : OFF"
     b.Font = Enum.Font.Gotham
@@ -94,11 +114,15 @@ local function Toggle(text, y, callback)
     end)
 end
 
-Toggle("🌕 Auto Find Full Moon", 120, function(v)
-    MoonHub.AutoFind = v
+Toggle("🌕 Auto Find Full Moon", 135, function(v)
+    MoonHub.AutoFull = v
 end)
 
-Toggle("🔁 Auto Hop Full Moon", 165, function(v)
+Toggle("🌗 Auto Find 75% Moon", 175, function(v)
+    MoonHub.Auto75 = v
+end)
+
+Toggle("🔁 Auto Hop Moon", 215, function(v)
     MoonHub.AutoHop = v
 end)
 
@@ -106,26 +130,32 @@ end)
 
 task.spawn(function()
     while task.wait(1) do
-        local night = IsNight()
-        local fullWindow = IsFullMoonWindow()
+        local phase = GetMoonPhaseName()
 
-        Info.Text =
+        Status.Text =
             "ClockTime: "..string.format("%.2f", Lighting.ClockTime).."\n"..
-            "Noite: "..(night and "SIM" or "NÃO").."\n"..
-            "Janela Full Moon: "..(fullWindow and "SIM" or "NÃO")
+            "Fase da Lua: "..phase
 
-        if MoonHub.AutoFind then
-            if night and fullWindow then
-                Info.Text = Info.Text.."\n\n✅ FULL MOON ENCONTRADA"
+        if MoonHub.AutoFull and IsNight() then
+            if IsFullMoon() then
+                Status.Text ..= "\n\n✅ FULL MOON ENCONTRADA"
                 MoonHub.AutoHop = false
-            else
-                if MoonHub.AutoHop then
-                    task.wait(1)
-                    ServerHop()
-                end
+            elseif MoonHub.AutoHop then
+                ServerHop()
+                break
+            end
+        end
+
+        if MoonHub.Auto75 and IsNight() then
+            if Is75Moon() then
+                Status.Text ..= "\n\n🌗 75% MOON (PRÓXIMA É FULL)"
+                MoonHub.AutoHop = false
+            elseif MoonHub.AutoHop then
+                ServerHop()
+                break
             end
         end
     end
 end)
 
-print("✅ Moon Hub REAL carregado")
+print("✅ Moon Hub carregado corretamente")
