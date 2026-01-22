@@ -1,27 +1,26 @@
---// Moon Hub - Fixed & Functional Version
+--// Moon Hub - Stable Version (Delta Compatible)
 repeat task.wait() until game:IsLoaded()
 task.wait(2)
 
+-- Services
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
+local CoreGui = game:GetService("CoreGui")
 local player = Players.LocalPlayer
 
--- ================= CONFIG =================
+-- ================= STATE =================
 getgenv().MoonHub = {
     AutoFull = false,
     Auto75 = false,
-    AutoHop = false
+    AutoHop = false,
+    Minimized = false,
+    Hopping = false
 }
 
--- ================= FUNÇÕES DE LUA =================
-
-local function IsNight()
-    return Lighting.ClockTime >= 18 or Lighting.ClockTime <= 6
-end
-
-local function GetMoonPhaseName()
+-- ================= MOON LOGIC =================
+local function GetMoonPhase()
     local t = Lighting.ClockTime
 
     if t >= 6 and t < 18 then
@@ -47,30 +46,38 @@ local function Is75Moon()
     return Lighting.ClockTime >= 23 and Lighting.ClockTime < 23.5
 end
 
+-- ================= SERVER HOP =================
 local function ServerHop()
-    local placeId = game.PlaceId
+    if MoonHub.Hopping then return end
+    MoonHub.Hopping = true
+
     local servers = HttpService:JSONDecode(
         game:HttpGet(
-            "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?limit=100")
+            "https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?limit=100"
+        )
     )
 
-    for _, s in pairs(servers.data) do
+    for _,s in ipairs(servers.data) do
         if s.playing < s.maxPlayers then
-            TeleportService:TeleportToPlaceInstance(placeId, s.id, player)
-            break
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
+            return
         end
     end
+
+    MoonHub.Hopping = false
 end
 
 -- ================= UI =================
+pcall(function()
+    CoreGui:FindFirstChild("MoonHubUI"):Destroy()
+end)
 
-local CoreGui = game:GetService("CoreGui")
 local gui = Instance.new("ScreenGui", CoreGui)
 gui.Name = "MoonHubUI"
 gui.ResetOnSpawn = false
 
 local Main = Instance.new("Frame", gui)
-Main.Size = UDim2.new(0,330,0,260)
+Main.Size = UDim2.new(0,330,0,270)
 Main.Position = UDim2.new(0.5,-165,0.15,0)
 Main.BackgroundColor3 = Color3.fromRGB(18,18,18)
 Main.Active = true
@@ -85,77 +92,86 @@ Title.Font = Enum.Font.GothamBold
 Title.TextSize = 20
 Title.TextColor3 = Color3.fromRGB(0,170,255)
 
-local Status = Instance.new("TextLabel", Main)
-Status.Position = UDim2.new(0,0,0,45)
-Status.Size = UDim2.new(1,0,0,80)
+local MinBtn = Instance.new("TextButton", Main)
+MinBtn.Size = UDim2.new(0,30,0,30)
+MinBtn.Position = UDim2.new(1,-40,0,5)
+MinBtn.Text = "-"
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 18
+MinBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+MinBtn.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", MinBtn)
+
+local Content = Instance.new("Frame", Main)
+Content.Position = UDim2.new(0,0,0,45)
+Content.Size = UDim2.new(1,0,1,-45)
+Content.BackgroundTransparency = 1
+
+local Status = Instance.new("TextLabel", Content)
+Status.Size = UDim2.new(1,0,0,70)
 Status.BackgroundTransparency = 1
 Status.Font = Enum.Font.Gotham
 Status.TextSize = 14
 Status.TextWrapped = true
 Status.TextColor3 = Color3.new(1,1,1)
 
-local function Toggle(text, y, callback)
-    local b = Instance.new("TextButton", Main)
-    b.Size = UDim2.new(0.9,0,0,34)
-    b.Position = UDim2.new(0.05,0,0,y)
-    b.Text = text.." : OFF"
-    b.Font = Enum.Font.Gotham
-    b.TextSize = 14
-    b.TextColor3 = Color3.new(1,1,1)
-    b.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    Instance.new("UICorner", b)
+local function CreateToggle(text, y, callback)
+    local btn = Instance.new("TextButton", Content)
+    btn.Size = UDim2.new(0.9,0,0,34)
+    btn.Position = UDim2.new(0.05,0,0,y)
+    btn.Text = text.." : OFF"
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.BackgroundColor3 = Color3.fromRGB(45,45,45)
+    btn.TextColor3 = Color3.new(1,1,1)
+    Instance.new("UICorner", btn)
 
-    local on = false
-    b.MouseButton1Click:Connect(function()
-        on = not on
-        b.Text = text.." : "..(on and "ON" or "OFF")
-        b.BackgroundColor3 = on and Color3.fromRGB(0,140,255) or Color3.fromRGB(40,40,40)
-        callback(on)
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = text.." : "..(state and "ON" or "OFF")
+        btn.BackgroundColor3 = state and Color3.fromRGB(0,140,255) or Color3.fromRGB(45,45,45)
+        callback(state)
     end)
 end
 
-Toggle("🌕 Auto Find Full Moon", 135, function(v)
+CreateToggle("🌕 Auto Find Full Moon", 80, function(v)
     MoonHub.AutoFull = v
 end)
 
-Toggle("🌗 Auto Find 75% Moon", 175, function(v)
+CreateToggle("🌗 Auto Find 75% Moon", 120, function(v)
     MoonHub.Auto75 = v
 end)
 
-Toggle("🔁 Auto Hop Moon", 215, function(v)
+CreateToggle("🔁 Auto Hop Moon", 160, function(v)
     MoonHub.AutoHop = v
 end)
 
--- ================= LOOP =================
+-- ================= MINIMIZAR =================
+MinBtn.MouseButton1Click:Connect(function()
+    MoonHub.Minimized = not MoonHub.Minimized
+    Content.Visible = not MoonHub.Minimized
+    Main.Size = MoonHub.Minimized and UDim2.new(0,330,0,45) or UDim2.new(0,330,0,270)
+    MinBtn.Text = MoonHub.Minimized and "+" or "-"
+end)
 
+-- ================= LOOP =================
 task.spawn(function()
     while task.wait(1) do
-        local phase = GetMoonPhaseName()
+        local phase = GetMoonPhase()
 
         Status.Text =
             "ClockTime: "..string.format("%.2f", Lighting.ClockTime).."\n"..
             "Fase da Lua: "..phase
 
-        if MoonHub.AutoFull and IsNight() then
-            if IsFullMoon() then
-                Status.Text ..= "\n\n✅ FULL MOON ENCONTRADA"
-                MoonHub.AutoHop = false
-            elseif MoonHub.AutoHop then
-                ServerHop()
-                break
-            end
-        end
-
-        if MoonHub.Auto75 and IsNight() then
-            if Is75Moon() then
-                Status.Text ..= "\n\n🌗 75% MOON (PRÓXIMA É FULL)"
-                MoonHub.AutoHop = false
-            elseif MoonHub.AutoHop then
-                ServerHop()
-                break
-            end
+        if MoonHub.AutoFull and IsFullMoon() then
+            Status.Text ..= "\n\n✅ FULL MOON ENCONTRADA"
+        elseif MoonHub.Auto75 and Is75Moon() then
+            Status.Text ..= "\n\n🌗 75% MOON (PRÓXIMA É FULL)"
+        elseif MoonHub.AutoHop then
+            ServerHop()
         end
     end
 end)
 
-print("✅ Moon Hub carregado corretamente")
+print("✅ Moon Hub carregado com sucesso")
