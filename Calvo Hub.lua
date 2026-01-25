@@ -1,56 +1,65 @@
---// Moon Hub - Stable Version (Delta Compatible)
+--// Calvo Hub - Chest Drop Scanner (REAL)
 repeat task.wait() until game:IsLoaded()
 task.wait(2)
 
 -- Services
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local Lighting = game:GetService("Lighting")
-local CoreGui = game:GetService("CoreGui")
+local Workspace = game:GetService("Workspace")
+
 local player = Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
 
 -- ================= STATE =================
-getgenv().MoonHub = {
-    AutoFull = false,
-    Auto75 = false,
+getgenv().CalvoHub = {
+    AutoChest = false,
     AutoHop = false,
-    Minimized = false,
-    Hopping = false
+    FoundDrop = false,
+    Farming = false
 }
 
--- ================= MOON LOGIC =================
-local function GetMoonPhase()
-    local t = Lighting.ClockTime
-
-    if t >= 6 and t < 18 then
-        return "☀️ Day"
-    elseif t >= 18 and t < 23 then
-        return "🌘 Waxing Moon"
-    elseif t >= 23 and t < 23.5 then
-        return "🌗 75% Moon"
-    elseif t >= 23.5 or t <= 0.5 then
-        return "🌕 Full Moon"
-    elseif t > 0.5 and t <= 4 then
-        return "🌖 Waning Moon"
-    else
-        return "🌑 Night"
+-- ================= DROP CHECK (MAPA) =================
+local function DropSpawned(name)
+    for _,v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("Tool") and v.Name == name then
+            return v
+        end
     end
+    return nil
 end
 
-local function IsFullMoon()
-    return Lighting.ClockTime >= 23.5 or Lighting.ClockTime <= 0.5
+local function GotItem(name)
+    return player.Backpack:FindFirstChild(name) or char:FindFirstChild(name)
 end
 
-local function Is75Moon()
-    return Lighting.ClockTime >= 23 and Lighting.ClockTime < 23.5
+-- ================= CHESTS =================
+local function GetChests()
+    local chests = {}
+    for _,v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.Name:lower():find("chest") then
+            table.insert(chests, v)
+        end
+    end
+    return chests
+end
+
+-- ================= MOVE =================
+local function TweenTo(pos)
+    local dist = (hrp.Position - pos).Magnitude
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(dist / 280, Enum.EasingStyle.Linear),
+        {CFrame = CFrame.new(pos)}
+    )
+    tween:Play()
+    tween.Completed:Wait()
 end
 
 -- ================= SERVER HOP =================
 local function ServerHop()
-    if MoonHub.Hopping then return end
-    MoonHub.Hopping = true
-
     local servers = HttpService:JSONDecode(
         game:HttpGet(
             "https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?limit=100"
@@ -60,118 +69,102 @@ local function ServerHop()
     for _,s in ipairs(servers.data) do
         if s.playing < s.maxPlayers then
             TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
-            return
+            break
         end
     end
-
-    MoonHub.Hopping = false
 end
 
 -- ================= UI =================
-pcall(function()
-    CoreGui:FindFirstChild("MoonHubUI"):Destroy()
-end)
+local CoreGui = game:GetService("CoreGui")
+pcall(function() CoreGui:FindFirstChild("CalvoChestHub"):Destroy() end)
 
 local gui = Instance.new("ScreenGui", CoreGui)
-gui.Name = "MoonHubUI"
-gui.ResetOnSpawn = false
+gui.Name = "CalvoChestHub"
 
 local Main = Instance.new("Frame", gui)
-Main.Size = UDim2.new(0,330,0,270)
-Main.Position = UDim2.new(0.5,-165,0.15,0)
+Main.Size = UDim2.new(0,340,0,240)
+Main.Position = UDim2.new(0.5,-170,0.15,0)
 Main.BackgroundColor3 = Color3.fromRGB(18,18,18)
 Main.Active = true
 Main.Draggable = true
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0,14)
+Instance.new("UICorner", Main)
 
 local Title = Instance.new("TextLabel", Main)
 Title.Size = UDim2.new(1,0,0,40)
 Title.BackgroundTransparency = 1
-Title.Text = "🌙 MOON HUB"
+Title.Text = "📦 Calvo Hub — Chest Scanner"
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 20
+Title.TextSize = 18
 Title.TextColor3 = Color3.fromRGB(0,170,255)
 
-local MinBtn = Instance.new("TextButton", Main)
-MinBtn.Size = UDim2.new(0,30,0,30)
-MinBtn.Position = UDim2.new(1,-40,0,5)
-MinBtn.Text = "-"
-MinBtn.Font = Enum.Font.GothamBold
-MinBtn.TextSize = 18
-MinBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-MinBtn.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", MinBtn)
-
-local Content = Instance.new("Frame", Main)
-Content.Position = UDim2.new(0,0,0,45)
-Content.Size = UDim2.new(1,0,1,-45)
-Content.BackgroundTransparency = 1
-
-local Status = Instance.new("TextLabel", Content)
+local Status = Instance.new("TextLabel", Main)
+Status.Position = UDim2.new(0,0,0,45)
 Status.Size = UDim2.new(1,0,0,70)
 Status.BackgroundTransparency = 1
-Status.Font = Enum.Font.Gotham
-Status.TextSize = 14
 Status.TextWrapped = true
+Status.Font = Enum.Font.Gotham
+Status.TextSize = 13
 Status.TextColor3 = Color3.new(1,1,1)
 
-local function CreateToggle(text, y, callback)
-    local btn = Instance.new("TextButton", Content)
-    btn.Size = UDim2.new(0.9,0,0,34)
-    btn.Position = UDim2.new(0.05,0,0,y)
-    btn.Text = text.." : OFF"
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 14
-    btn.BackgroundColor3 = Color3.fromRGB(45,45,45)
-    btn.TextColor3 = Color3.new(1,1,1)
-    Instance.new("UICorner", btn)
+local function Button(text, y, callback)
+    local b = Instance.new("TextButton", Main)
+    b.Size = UDim2.new(0.9,0,0,34)
+    b.Position = UDim2.new(0.05,0,0,y)
+    b.Text = text.." : OFF"
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 14
+    b.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    b.TextColor3 = Color3.new(1,1,1)
+    Instance.new("UICorner", b)
 
-    local state = false
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        btn.Text = text.." : "..(state and "ON" or "OFF")
-        btn.BackgroundColor3 = state and Color3.fromRGB(0,140,255) or Color3.fromRGB(45,45,45)
-        callback(state)
+    local on = false
+    b.MouseButton1Click:Connect(function()
+        on = not on
+        b.Text = text.." : "..(on and "ON" or "OFF")
+        b.BackgroundColor3 = on and Color3.fromRGB(0,140,255) or Color3.fromRGB(40,40,40)
+        callback(on)
     end)
 end
 
-CreateToggle("🌕 Auto Find Full Moon", 80, function(v)
-    MoonHub.AutoFull = v
+Button("📦 Auto Chest", 130, function(v)
+    CalvoHub.AutoChest = v
 end)
 
-CreateToggle("🌗 Auto Find 75% Moon", 120, function(v)
-    MoonHub.Auto75 = v
+Button("🔁 Auto Hop Chest", 170, function(v)
+    CalvoHub.AutoHop = v
 end)
 
-CreateToggle("🔁 Auto Hop Moon", 160, function(v)
-    MoonHub.AutoHop = v
-end)
-
--- ================= MINIMIZAR =================
-MinBtn.MouseButton1Click:Connect(function()
-    MoonHub.Minimized = not MoonHub.Minimized
-    Content.Visible = not MoonHub.Minimized
-    Main.Size = MoonHub.Minimized and UDim2.new(0,330,0,45) or UDim2.new(0,330,0,270)
-    MinBtn.Text = MoonHub.Minimized and "+" or "-"
-end)
-
--- ================= LOOP =================
+-- ================= MAIN LOOP =================
 task.spawn(function()
     while task.wait(1) do
-        local phase = GetMoonPhase()
+        local chalice = DropSpawned("God Chalice")
+        local fist = DropSpawned("Fist of Darkness")
 
         Status.Text =
-            "ClockTime: "..string.format("%.2f", Lighting.ClockTime).."\n"..
-            "Fase da Lua: "..phase
+            "God Chalice no mapa: "..(chalice and "✅ SIM" or "❌ NÃO").."\n"..
+            "Fist of Darkness no mapa: "..(fist and "✅ SIM" or "❌ NÃO")
 
-        if MoonHub.AutoFull and IsFullMoon() then
-            Status.Text ..= "\n\n✅ FULL MOON ENCONTRADA"
-        elseif MoonHub.Auto75 and Is75Moon() then
-            Status.Text ..= "\n\n🌗 75% MOON (PRÓXIMA É FULL)"
-        elseif MoonHub.AutoHop then
-            ServerHop()
+        if GotItem("God Chalice") or GotItem("Fist of Darkness") then
+            CalvoHub.AutoChest = false
+            CalvoHub.AutoHop = false
+            Status.Text ..= "\n\n🎉 ITEM OBTIDO — PARANDO"
+            break
+        end
+
+        if CalvoHub.AutoChest then
+            local chests = GetChests()
+            if #chests > 0 then
+                for _,c in ipairs(chests) do
+                    if not CalvoHub.AutoChest then break end
+                    TweenTo(c.Position + Vector3.new(0,3,0))
+                    task.wait(0.3)
+                end
+            elseif CalvoHub.AutoHop then
+                ServerHop()
+                break
+            end
         end
     end
 end)
 
-print("✅ Moon Hub carregado com sucesso")
+print("✅ Calvo Hub Chest Scanner carregado")
